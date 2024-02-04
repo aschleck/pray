@@ -3,6 +3,8 @@
 pkgs.mkShell {
   buildInputs = with pkgs; [
     buildah
+    kind
+    kubectl
     podman
     python3
     qemu
@@ -10,5 +12,7 @@ pkgs.mkShell {
 
   shellHook = ''
     alias vim=nvim
+    source venv/bin/activate
+    export PS1="(venv) \[\033[1;32m\][nix-shell:\w]\$\[\033[0m\] "
   '';
 }

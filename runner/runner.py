@@ -8,10 +8,10 @@ import urllib.request
 
 from yarl import URL
 
-BAZEL_REMOTE_BASE = URL.build(
+REMOTE_CACHE_BASE = URL.build(
     scheme="http",
-    host=os.environ.get("BAZEL_REMOTE_SERVICE_HOST", "unknown"),
-    port=int(os.environ.get("BAZEL_REMOTE_SERVICE_PORT", "0")),
+    host=os.environ.get("REMOTE_CACHE_SERVICE_HOST", "unknown"),
+    port=int(os.environ.get("REMOTE_CACHE_SERVICE_PORT", "0")),
 )
 
 
@@ -19,15 +19,15 @@ def main(args):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 
     if len(args) < 3:
-        print(f"Usage: {sys.argv[0]} <bundle-id> <script> {{ args }}", file=sys.stderr)
+        print(f"Usage: {args[0]} <bundle-id> <script> {{ args }}", file=sys.stderr)
         sys.exit(1)
 
-    if str(BAZEL_REMOTE_BASE) == "http://unknown:0":
-        print("BAZEL_REMOTE_SERVICE_{HOST,PORT} environment variables aren't set", file=sys.stderr)
+    if str(REMOTE_CACHE_BASE) == "http://unknown:0":
+        print("REMOTE_CACHE_SERVICE_{HOST,PORT} environment variables aren't set", file=sys.stderr)
         sys.exit(1)
 
-    bundle_id = sys.argv[1]
-    bundle_url = BAZEL_REMOTE_BASE / "cas" / bundle_id
+    bundle_id = args[1]
+    bundle_url = REMOTE_CACHE_BASE / "cas" / bundle_id
     output_file = Path("/tmp/bundle.tar.bz2")
     logging.info(f"Fetching {bundle_url} to {output_file}")
     urllib.request.urlretrieve(str(bundle_url), output_file)
@@ -38,7 +38,7 @@ def main(args):
     with tarfile.open(output_file) as tar:
         tar.extractall(path=output_path)
 
-    args = [sys.executable] + sys.argv[2:]
+    args = [sys.executable, str(output_path / args[2])] + args[3:]
     quoted_args = " ".join([shlex.quote(a) for a in args])
     logging.info(f"Executing {quoted_args}")
 
