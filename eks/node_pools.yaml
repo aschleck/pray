@@ -1,0 +1,39 @@
+apiVersion: karpenter.sh/v1beta1
+kind: NodePool
+metadata:
+  name: g4dn
+spec:
+  template:
+    spec:
+      requirements:
+      - key: karpenter.k8s.aws/instance-family
+        operator: In
+        values:
+          - g4dn
+      labels:
+        nvidia.com/gpu: nvidia-t4-16gb
+      taints:
+      - key: nvidia.com/gpu
+        value: true
+        effect: "NoSchedule"
+
+---
+
+apiVersion: karpenter.sh/v1beta1
+kind: NodePool
+metadata:
+  name: g5
+spec:
+  template:
+    spec:
+      requirements:
+      - key: karpenter.k8s.aws/instance-family
+        operator: In
+        values:
+          - g5
+      labels:
+        nvidia.com/gpu: nvidia-a10g-24gb
+      taints:
+      - key: nvidia.com/gpu
+        value: true
+        effect: "NoSchedule"
