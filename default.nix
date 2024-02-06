@@ -5,6 +5,7 @@ pkgs.mkShell {
     buildah
     kind
     kubectl
+    kubernetes-helm
     podman
     python3
     qemu
