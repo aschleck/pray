@@ -5,7 +5,7 @@ CLUSTER_NAME="REPLACE_ME"
 helm template karpenter \
     oci://public.ecr.aws/karpenter/karpenter \
     --include-crds \
-    --version "v0.33.2" \
+    --version "v0.34.0" \
     --namespace "kube-system" \
     --set "settings.clusterName=${CLUSTER_NAME}" \
     --set "settings.interruptionQueue=${CLUSTER_NAME}" \
@@ -22,6 +22,7 @@ helm template nvidia-device-plugin \
     --repo "https://nvidia.github.io/k8s-device-plugin" \
     --namespace "kube-system" \
     --include-crds \
+    --set-json 'nodeSelector={"nvidia.com/gpu": "true"}' \
     | grep -v "app.kubernetes.io/managed-by: Helm" \
     | grep -v "helm.sh/chart: " \
     > nvidia-device-plugin.yaml

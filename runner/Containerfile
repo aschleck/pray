@@ -1,5 +1,6 @@
 FROM docker.io/python:3-slim
 
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 RUN mkdir /app && useradd --create-home app
 WORKDIR /app
 COPY . .

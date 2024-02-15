@@ -58,6 +58,8 @@ spec:
         - name: device-plugin
           hostPath:
             path: /var/lib/kubelet/device-plugins
+      nodeSelector:
+        nvidia.com/gpu: "true"
       tolerations:
         - key: CriticalAddonsOnly
           operator: Exists

@@ -51,8 +51,6 @@ def find_root(path: Path, needle: str) -> Path:
 
 
 def upload_archive(root: Path, bazel_remote: URL) -> str:
-    # TODO(april): remove this
-    bazel_remote = URL("http://localhost:8080")
     tar_io = io.BytesIO()
     with tarfile.open(fileobj=tar_io, mode="w:bz2") as tar:
         for p in root.glob("**/*.py"):
@@ -78,26 +76,24 @@ def create_manifest(key: str, args, pass_through_args: list[str]) -> client.V1Po
     limits = {}
 
     if args.accelerator != "none":
-        # TODO(april): kind of awkward to use nvidia.com/gpu since we're prefixing with nvidia
-        # anyway but since we don't populate the resource count of nvidia.com/gpu I guess we might
-        # as well just go with it for now.
-        node_selector["nvidia.com/gpu"] = "nvidia-a10g-24gb"
+        node_selector["april.dev/accelerator"] = "nvidia-a10g-24gb"
         limits["nvidia.com/gpu"] = args.accelerator_count
 
     return v1.create_namespaced_pod(namespace="default", body=client.V1Pod(
         metadata=client.V1ObjectMeta(
             generate_name=f"pray-{user}-",
             namespace="default",
+            annotations={"karpenter.sh/do-not-evict": "true"},
             labels={"app.kubernetes.io/name": "pray-runner"},
         ),
         spec=client.V1PodSpec(
             node_selector=node_selector,
+            restart_policy="Never",
             containers=[
                 client.V1Container(
                     args=[key, args.script] + pass_through_args,
                     # TODO(april): ?
                     image="april.dev/pray/runner:latest",
-                    image_pull_policy="Never",
                     name="runner",
                     resources=client.V1ResourceRequirements(
                         limits=limits,
