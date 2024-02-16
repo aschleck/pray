@@ -6,6 +6,13 @@ spec:
   amiFamily: AL2
   role: "KarpenterNodeRole-cluster-us-west-2"
 
+  blockDeviceMappings:
+  - deviceName: /dev/xvda
+    ebs:
+      volumeSize: 100Gi
+      volumeType: gp3
+      encrypted: true
+
   securityGroupSelectorTerms:
   - tags:
       karpenter.sh/discovery: "cluster-us-west-2"

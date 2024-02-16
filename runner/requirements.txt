@@ -1,2 +1,5 @@
+numpy==1.26.4
 torch==2.2.0
+
+# Required for the pray runner
 yarl==1.9.4

@@ -13,6 +13,7 @@ helm template karpenter \
     --set controller.resources.requests.memory=256Mi \
     --set controller.resources.limits.cpu=1 \
     --set controller.resources.limits.memory=1Gi \
+    --set replicas=1 \
     | grep -v "app.kubernetes.io/managed-by: Helm" \
     | grep -v "helm.sh/chart: " \
     > karpenter.yaml

@@ -264,6 +264,23 @@ Resources:
             }
           ]
         }
+  KarpenterPodRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "KarpenterPodRole-${ClusterName}"
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                !Sub "pods.eks.${AWS::URLSuffix}"
+            Action:
+              - "sts:AssumeRole"
+              - "sts:TagSession"
+      ManagedPolicyArns:
+        - !Ref KarpenterControllerPolicy
   KarpenterInterruptionQueue:
     Type: AWS::SQS::Queue
     Properties:
