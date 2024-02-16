@@ -5,6 +5,130 @@ Parameters:
     Type: String
     Description: "EKS cluster name"
 Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.4.0.0/16
+  SubnetPublicA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Sub "{AWS::Region}a"
+      CidrBlock: 10.4.16.0/20
+      MapPublicIpOnLaunch: true
+      Tags: 
+        - Key: Name
+          Value: public-a
+      VpcId: !Ref VPC
+  SubnetPrivateA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Sub "{AWS::Region}a"
+      CidrBlock: 10.4.16.0/20
+      Tags: 
+        - Key: Name
+          Value: private-a
+        - Key: karpenter.sh/discovery
+          Value: cluster-us-west-2
+      VpcId: !Ref VPC
+  SubnetPrivateB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Sub "{AWS::Region}b"
+      CidrBlock: 10.4.32.0/20
+      Tags: 
+        - Key: Name
+          Value: private-b
+        - Key: karpenter.sh/discovery
+          Value: cluster-us-west-2
+      VpcId: !Ref VPC
+  SubnetPrivateC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Sub "{AWS::Region}c"
+      CidrBlock: 10.4.48.0/20
+      Tags: 
+        - Key: Name
+          Value: private-c
+        - Key: karpenter.sh/discovery
+          Value: cluster-us-west-2
+      VpcId: !Ref VPC
+  SubnetPrivateD:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Sub "{AWS::Region}d"
+      CidrBlock: 10.4.64.0/20
+      Tags: 
+        - Key: Name
+          Value: private-d
+        - Key: karpenter.sh/discovery
+          Value: cluster-us-west-2
+      VpcId: !Ref VPC
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags: 
+        - Key: Name
+          Value: public-gateway
+  RouteTablePublic:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags: 
+        - Key: Name
+          Value: public
+      VpcId: !Ref VPC
+  SubnetPublicARouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTablePublic
+      SubnetId: !Ref SubnetPublicA
+  RouteInternetGateway:
+     Type: AWS::EC2::Route
+     Properties:
+        RouteTableId: !Ref RouteTablePublic
+        DestinationCidrBlock: '0.0.0.0/0'
+        GatewayId: !Ref GatewayId
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      ConnectivityType: public
+      SubnetId: !Ref SubnetPublicA
+      Tags: 
+        - Key: Name
+          Value: nat-gateway
+  RouteTablePrivate:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags: 
+        - Key: Name
+          Value: private
+      VpcId: !Ref VPC
+  SubnetPrivateARouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTablePrivate
+      SubnetId: !Ref SubnetPrivateA
+  SubnetPrivateBRouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTablePrivate
+      SubnetId: !Ref SubnetPrivateB
+  SubnetPrivateCRouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTablePrivate
+      SubnetId: !Ref SubnetPrivateC
+  SubnetPrivateDRouteTable:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTablePrivate
+      SubnetId: !Ref SubnetPrivateD
+  RouteNatGateway:
+     Type: AWS::EC2::Route
+     Properties:
+        RouteTableId: !Ref RouteTablePrivate
+        DestinationCidrBlock: '0.0.0.0/0'
+        NatGatewayId: !Ref NatGateway
+
   KarpenterNodeRole:
     Type: "AWS::IAM::Role"
     Properties:
