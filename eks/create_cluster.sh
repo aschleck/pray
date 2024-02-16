@@ -49,7 +49,7 @@ iam:
 #     roleOnly: true
 
 iamIdentityMappings:
-- arn: "arn:aws:iam::${AWS_ACCOUNT_ID}:role/KarpenterNodeRole-${CLUSTER_NAME}"
+- arn: "arn:aws:iam::${AWS_ACCOUNT_ID}:role/KarpenterNode-${CLUSTER_NAME}"
   username: system:node:{{EC2PrivateDNSName}}
   groups:
   - system:bootstrappers

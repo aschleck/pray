@@ -4,6 +4,12 @@ Parameters:
   ClusterName:
     Type: String
     Description: "EKS cluster name"
+  ClusterVersion:
+    Type: String
+    Description: "EKS cluster version"
+  LatestEksId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: !Sub "/aws/service/eks/optimized-ami/${ClusterVersion}/amazon-linux-2/recommended/image_id"
 Resources:
   VPC:
     Type: AWS::EC2::VPC
@@ -15,7 +21,7 @@ Resources:
       AvailabilityZone: !Sub "{AWS::Region}a"
       CidrBlock: 10.4.16.0/20
       MapPublicIpOnLaunch: true
-      Tags: 
+      Tags:
         - Key: Name
           Value: public-a
       VpcId: !Ref VPC
@@ -24,7 +30,7 @@ Resources:
     Properties:
       AvailabilityZone: !Sub "{AWS::Region}a"
       CidrBlock: 10.4.16.0/20
-      Tags: 
+      Tags:
         - Key: Name
           Value: private-a
         - Key: karpenter.sh/discovery
@@ -35,7 +41,7 @@ Resources:
     Properties:
       AvailabilityZone: !Sub "{AWS::Region}b"
       CidrBlock: 10.4.32.0/20
-      Tags: 
+      Tags:
         - Key: Name
           Value: private-b
         - Key: karpenter.sh/discovery
@@ -46,7 +52,7 @@ Resources:
     Properties:
       AvailabilityZone: !Sub "{AWS::Region}c"
       CidrBlock: 10.4.48.0/20
-      Tags: 
+      Tags:
         - Key: Name
           Value: private-c
         - Key: karpenter.sh/discovery
@@ -57,7 +63,7 @@ Resources:
     Properties:
       AvailabilityZone: !Sub "{AWS::Region}d"
       CidrBlock: 10.4.64.0/20
-      Tags: 
+      Tags:
         - Key: Name
           Value: private-d
         - Key: karpenter.sh/discovery
@@ -66,13 +72,13 @@ Resources:
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
-      Tags: 
+      Tags:
         - Key: Name
           Value: public-gateway
   RouteTablePublic:
     Type: AWS::EC2::RouteTable
     Properties:
-      Tags: 
+      Tags:
         - Key: Name
           Value: public
       VpcId: !Ref VPC
@@ -92,13 +98,13 @@ Resources:
     Properties:
       ConnectivityType: public
       SubnetId: !Ref SubnetPublicA
-      Tags: 
+      Tags:
         - Key: Name
           Value: nat-gateway
   RouteTablePrivate:
     Type: AWS::EC2::RouteTable
     Properties:
-      Tags: 
+      Tags:
         - Key: Name
           Value: private
       VpcId: !Ref VPC
@@ -129,10 +135,132 @@ Resources:
         DestinationCidrBlock: '0.0.0.0/0'
         NatGatewayId: !Ref NatGateway
 
-  KarpenterNodeRole:
-    Type: "AWS::IAM::Role"
+  SecurityGroupInternetAccess:
+    Type: AWS::EC2::SecurityGroup
     Properties:
-      RoleName: !Sub "KarpenterNodeRole-${ClusterName}"
+      GroupName: internet-access
+      GroupDescription: Allow machines to access the internet
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIpv6: ::/0
+      Tags:
+        - Key: karpenter.sh/discovery
+        - Value: !Sub "${ClusterName}"
+  SecurityGroupLocalAccess:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: local-access
+      GroupDescription: Allow local machines to talk to each other
+      VpcId: !Ref VPC
+      Tags:
+        - Key: karpenter.sh/discovery
+        - Value: !Sub "${ClusterName}"
+  SecurityGroupLocalAccessEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      IpProtocol: -1
+      FromPort: -1
+      ToPort: -1
+      DestinationSecurityGroupId:
+        Fn::GetAtt:
+          - SecurityGroupLocalAccess
+          - GroupId
+      GroupId:
+        Fn::GetAtt:
+          - SecurityGroupLocalAccess
+          - GroupId
+  SecurityGroupLocalAccessIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: -1
+      FromPort: -1
+      ToPort: -1
+      SourceSecurityGroupId:
+        Fn::GetAtt:
+          - SecurityGroupLocalAccess
+          - GroupId
+      GroupId:
+        Fn::GetAtt:
+          - SecurityGroupLocalAccess
+          - GroupId
+  SecurityGroupSsh:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: allow-ssh-from-anywhere
+      GroupDescription: Allow machines to receive SSH traffic
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIpv6: ::/0
+
+  SecurityGroupEksControlPlane:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "eks-control-plane-${ClusterName}"
+      GroupDescription: Allow the control plane to talk to itself
+      VpcId: !Ref VPC
+  SecurityGroupEksControlPlaneIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: -1
+      FromPort: -1
+      ToPort: -1
+      SourceSecurityGroupId:
+        Fn::GetAtt:
+          - SecurityGroupEksControlPlane
+          - GroupId
+      GroupId:
+        Fn::GetAtt:
+          - SecurityGroupEksControlPlane
+          - GroupId
+  SecurityGroupEksNode:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow nodes to access the control plane
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          DestinationSecurityGroupId:
+            Fn::GetAtt:
+              - SecurityGroupEksControlPlane
+              - GroupId
+
+  Cluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Name: !Sub "${ClusterName}"
+      Version: !Sub "${ClusterVersion}"
+      ResourcesVpcConfig:
+        EndpointPrivateAccess: true
+        EndpointPublicAccess: false
+        SecurityGroupIds:
+          - !Ref SecurityGroupEksControlPlane
+          - !Ref SecurityGroupInternetAccess # TODO(april): is this required?
+          - !Ref SecurityGroupLocalAccess
+        SubnetIds:
+          - !Ref SubnetPrivateA
+          - !Ref SubnetPrivateB
+          - !Ref SubnetPrivateC
+          - !Ref SubnetPrivateD
+  ClusterNodeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "eks-node-${ClusterName}"
       Path: /
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
@@ -148,6 +276,44 @@ Resources:
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonEKSWorkerNodePolicy"
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+  ClusterNodeAccess:
+    Type: AWS::EKS::AccessEntry
+    Properties:
+      ClusterName: !Sub "${ClusterName}"
+      PrincipalArn: !Ref ClusterNodeRole
+      Username: "system:node:{{EC2PrivateDNSName}}"
+      KubernetesGroups:
+        - system:bootstrappers
+        - system:nodes
+  ClusterBaseNodeLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName:
+        LaunchTemplateName: !Sub "eks-base-node-group-${ClusterName}"
+        ImageId: !Sub "${LatestEksId}"
+        InstanceType: t3.medium
+        LaunchTemplateData:
+          SecurityGroupIds:
+            - !Ref SecurityGroupEksNode
+            - !Ref SecurityGroupInternetAccess
+            - !Ref SecurityGroupLocalAccess
+  ClusterBaseNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    Properties:
+      NodegroupName: eks-base-node-group
+      ClusterName: !Sub "${ClusterName}"
+      LaunchTemplate: !Ref ClusterBaseNodeLaunchTemplate
+      NodeRole: !Ref ClusterNodeRole
+      ScalingConfig:
+        MinSize: 1
+        DesiredSize: 1
+        MaxSize: 2
+      Subnets:
+        - !Ref SubnetPrivateA
+        - !Ref SubnetPrivateB
+        - !Ref SubnetPrivateC
+        - !Ref SubnetPrivateD
+
   KarpenterControllerPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
@@ -310,7 +476,7 @@ Resources:
             {
               "Sid": "AllowPassingInstanceRole",
               "Effect": "Allow",
-              "Resource": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/KarpenterNodeRole-${ClusterName}",
+              "Resource": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/KarpenterNode-${ClusterName}",
               "Action": "iam:PassRole",
               "Condition": {
                 "StringEquals": {
@@ -389,9 +555,9 @@ Resources:
           ]
         }
   KarpenterPodRole:
-    Type: "AWS::IAM::Role"
+    Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "KarpenterPodRole-${ClusterName}"
+      RoleName: !Sub "KarpenterPod-${ClusterName}"
       Path: /
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
@@ -405,6 +571,14 @@ Resources:
               - "sts:TagSession"
       ManagedPolicyArns:
         - !Ref KarpenterControllerPolicy
+  KarpenterPodIdentityAssociation:
+    Type: AWS::EKS::PodIdentityAssociation
+    Properties:
+      ClusterName: !Sub "${ClusterName}"
+      Namespace: kube-system
+      RoleArn: !Ref KarpenterPodRole
+      ServiceAccount: karpenter
+
   KarpenterInterruptionQueue:
     Type: AWS::SQS::Queue
     Properties:
