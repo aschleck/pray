@@ -5,6 +5,7 @@ import getpass
 import hashlib
 import io
 import logging
+from netrc import netrc
 import os
 from pathlib import Path
 import random
@@ -17,6 +18,7 @@ from yarl import URL
 
 
 BAZEL_REMOTE_NAME = "remote-cache"
+WANDB_HOST = "api.wandb.ai"
 
 
 def find_bazel_remote() -> URL:
@@ -50,6 +52,16 @@ def find_root(path: Path, needle: str) -> Path:
     raise Exception(f"Unable to find {needle} in any ancestor of {path}")
 
 
+def get_wandb_token() -> str|None:
+    try:
+        if auth := netrc().authenticators(WANDB_HOST):
+            return auth[2]
+        else:
+            return None
+    except FileNotFoundError:
+        return None
+
+
 def upload_archive(root: Path, bazel_remote: URL) -> str:
     tar_io = io.BytesIO()
     with tarfile.open(fileobj=tar_io, mode="w:bz2") as tar:
@@ -65,10 +77,11 @@ def upload_archive(root: Path, bazel_remote: URL) -> str:
     return key
 
 
-def create_manifest(key: str, args, pass_through_args: list[str]) -> client.V1Pod:
+def create_pod(key: str, args, pass_through_args: list[str]) -> client.V1Pod:
     user = getpass.getuser()
     v1 = client.CoreV1Api()
 
+    env = {}
     node_selector = {}
     requests = {
         "cpu": args.cpu_count,
@@ -78,6 +91,9 @@ def create_manifest(key: str, args, pass_through_args: list[str]) -> client.V1Po
     if args.accelerator != "none":
         node_selector["april.dev/accelerator"] = "nvidia-a10g-24gb"
         limits["nvidia.com/gpu"] = args.accelerator_count
+
+    if token := get_wandb_token():
+        env["WANDB_API_KEY"] = token
 
     return v1.create_namespaced_pod(namespace="default", body=client.V1Pod(
         metadata=client.V1ObjectMeta(
@@ -95,6 +111,7 @@ def create_manifest(key: str, args, pass_through_args: list[str]) -> client.V1Po
                     # TODO(april): ?
                     image="april.dev/pray/runner:latest",
                     name="runner",
+                    env=[client.V1EnvVar(name=k, value=v) for k, v in env.items()],
                     resources=client.V1ResourceRequirements(
                         limits=limits,
                         requests=requests,
@@ -128,7 +145,7 @@ def main(unparsed_args):
     # TODO(april): note that if bazel-remote is replicated than there's no reason to expect that the
     # runner will pick the correct one to fetch this file. The obvious thing to do is pass the IP
     # and port but then we need to check in the launcher that we're not being scroogled.
-    pod = create_manifest(key, args, unknown_args)
+    pod = create_pod(key, args, unknown_args)
     print(f"Created {pod.metadata.name}")
 
 
