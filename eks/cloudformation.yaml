@@ -16,6 +16,7 @@ Resources:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: 10.4.0.0/16
+      EnableDnsHostnames: true
   VpcIpv6:
     Type: AWS::EC2::VPCCidrBlock
     Properties:
