@@ -38,13 +38,13 @@ def main(args):
     with tarfile.open(output_file) as tar:
         tar.extractall(path=output_path)
 
-    args = [sys.executable, str(output_path / args[2])] + args[3:]
-    quoted_args = " ".join([shlex.quote(a) for a in args])
+    target_args = [str(output_path / args[2])] + args[3:]
+    quoted_args = " ".join([shlex.quote(a) for a in target_args])
     logging.info(f"Executing {quoted_args}")
 
     sys.stderr.flush()
     sys.stdout.flush()
-    os.execv(sys.executable, args)
+    os.execv(target_args[0], target_args)
 
 
 if __name__ == "__main__":

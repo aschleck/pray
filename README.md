@@ -7,29 +7,40 @@ A simple way to run local Python scripts on a remote Kubernetes cluster.
 
 ## Launcher
 
-By default it will request 1 Nvidia A10G.
+By default it will request no GPUs.
 
 ```sh
 ./launch.py your_repo_root some/amazing/script.py --some_flag_for_your_script another_arg
 ```
 
-You can request a different GPU like so.
+You can request a default GPU like so (defaults to Nvidia A10G.)
+
+```
+./launch.py your_repo_root some/amazing/script.py --accelerator_count=4
+```
+
+Or a specific GPU.
 
 ```
 ./launch.py your_repo_root some/amazing/script.py --accelerator=nvidia-t4-16gb \
     --some_flag_for_your_script another_arg
 ```
 
-Or more GPUs.
+## Setting defaults
 
-```
-./launch.py your_repo_root some/amazing/script.py --accelerator_count=4
-```
+There are a number of environment variables that control defaults for pray. The intention is for
+you to write your own wrapper script that sets the defaults appropriate for your environment.
 
-Or no GPUs.
+For example, you might use it in your monorepo with path `repo` and want to specify a default image
+and always default to using GPUs.
 
-```
-./launch.py your_repo_root some/amazing/script.py --accelerator=none
+```sh
+#!/usr/bin/env bash
+
+DEFAULT_ACCELERATOR="nvidia-a10g-24gb" \
+    DEFAULT_ACCELERATOR_COUNT=1 \
+    DEFAULT_IMAGE="yourdomain.com/pray/runner:latest" \
+    "$(dirname "$0")/launch.py" repo "$@"
 ```
 
 ## Developing locally

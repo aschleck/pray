@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+# TODO(april): it'd be nice if the runner had some image version information. Is there anything we
+# can do?
+
 import argparse
 import getpass
 import hashlib
@@ -17,8 +20,17 @@ from kubernetes import client, config
 from yarl import URL
 
 
+ACCELERATORS = ("nvidia-a10g-24gb", "nvidia-t4-16gb")
 BAZEL_REMOTE_NAME = "remote-cache"
 WANDB_HOST = "api.wandb.ai"
+
+DEFAULT_ACCELERATOR = os.environ.get("DEFAULT_ACCELERATOR")
+DEFAULT_ACCELERATOR_COUNT = int(os.environ.get("DEFAULT_ACCELERATOR_COUNT", "0"))
+DEFAULT_CPU_COUNT = float(os.environ.get("DEFAULT_CPU_COUNT", "1"))
+DEFAULT_GLOB = os.environ.get("DEFAULT_GLOB", "**/*.py")
+# TODO(april): ?
+DEFAULT_IMAGE = os.environ.get("DEFAULT_IMAGE", "april.dev/pray/runner:latest")
+DEFAULT_MEMORY_GB = float(os.environ.get("DEFAULT_MEMORY_GB", "0.5"))
 
 
 def find_bazel_remote() -> URL:
@@ -62,11 +74,12 @@ def get_wandb_token() -> str|None:
         return None
 
 
-def upload_archive(root: Path, bazel_remote: URL) -> str:
+def upload_archive(root: Path, globs: list[str], bazel_remote: URL) -> str:
     tar_io = io.BytesIO()
     with tarfile.open(fileobj=tar_io, mode="w:bz2") as tar:
-        for p in root.glob("**/*.py"):
-            tar.add(p, arcname=str(p)[len(str(root)) + 1:])
+        for glob in globs:
+            for p in root.glob(glob):
+                tar.add(p, arcname=str(p)[len(str(root)) + 1:])
 
     tar_bytes = tar_io.getvalue()
     key = hashlib.sha256(tar_bytes).hexdigest()
@@ -77,7 +90,7 @@ def upload_archive(root: Path, bazel_remote: URL) -> str:
     return key
 
 
-def create_pod(key: str, args, pass_through_args: list[str]) -> client.V1Pod:
+def create_pod(key: str, script: Path, args, pass_through_args: list[str]) -> client.V1Pod:
     user = getpass.getuser()
     v1 = client.CoreV1Api()
 
@@ -85,11 +98,12 @@ def create_pod(key: str, args, pass_through_args: list[str]) -> client.V1Pod:
     node_selector = {}
     requests = {
         "cpu": args.cpu_count,
+        "memory": f"{args.memory_gb}Gi",
     }
     limits = {}
 
-    if args.accelerator != "none":
-        node_selector["april.dev/accelerator"] = "nvidia-a10g-24gb"
+    if args.accelerator and args.accelerator_count > 0:
+        node_selector["april.dev/accelerator"] = args.accelerator
         limits["nvidia.com/gpu"] = args.accelerator_count
 
     if token := get_wandb_token():
@@ -107,9 +121,8 @@ def create_pod(key: str, args, pass_through_args: list[str]) -> client.V1Pod:
             restart_policy="Never",
             containers=[
                 client.V1Container(
-                    args=[key, args.script] + pass_through_args,
-                    # TODO(april): ?
-                    image="april.dev/pray/runner:latest",
+                    args=[key, str(script)] + pass_through_args,
+                    image=args.image,
                     name="runner",
                     env=[client.V1EnvVar(name=k, value=v) for k, v in env.items()],
                     resources=client.V1ResourceRequirements(
@@ -128,10 +141,18 @@ def main(unparsed_args):
     parser = argparse.ArgumentParser(prog=unparsed_args[0])
     parser.add_argument("repository_root")
     parser.add_argument("script")
-    parser.add_argument("--accelerator", default="nvidia-a10g-24gb")
-    parser.add_argument("--accelerator_count", type=int, default=1)
-    parser.add_argument("--cpu_count", type=float, default=1)
+    parser.add_argument("--accelerator", choices=ACCELERATORS, default=DEFAULT_ACCELERATOR)
+    parser.add_argument("--accelerator_count", type=int, default=DEFAULT_ACCELERATOR_COUNT)
+    parser.add_argument("--cpu_count", type=float, default=DEFAULT_CPU_COUNT)
+    parser.add_argument("--glob", default=DEFAULT_GLOB)
+    parser.add_argument("--image", default=DEFAULT_IMAGE)
+    parser.add_argument("--memory_gb", type=float, default=DEFAULT_MEMORY_GB)
     args, unknown_args = parser.parse_known_args(unparsed_args[1:])
+
+    if args.accelerator_count > 0 and not args.accelerator:
+        args.accelerator = ACCELERATORS[0]
+    elif args.accelerator_count == 0 and args.accelerator:
+        args.accelerator_count = 1
 
     root = find_root(Path(os.getcwd()), args.repository_root)
     config.load_kube_config()
@@ -140,12 +161,13 @@ def main(unparsed_args):
         bazel_remote = address
     else:
         bazel_remote = find_bazel_remote()
-    key = upload_archive(root, bazel_remote)
-
     # TODO(april): note that if bazel-remote is replicated than there's no reason to expect that the
     # runner will pick the correct one to fetch this file. The obvious thing to do is pass the IP
     # and port but then we need to check in the launcher that we're not being scroogled.
-    pod = create_pod(key, args, unknown_args)
+    key = upload_archive(root, args.glob.split(os.pathsep), bazel_remote)
+
+    script = (root.Path.cwd() / args.script).relative_to(root)
+    pod = create_pod(key, script, args, unknown_args)
     print(f"Created {pod.metadata.name}")
 
 
