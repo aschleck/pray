@@ -338,6 +338,31 @@ Resources:
         - !Ref SubnetPrivateC
         - !Ref SubnetPrivateD
 
+  EfsCsiPodRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "EfsCsiPod-${ClusterName}"
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                !Sub "pods.eks.${AWS::URLSuffix}"
+            Action:
+              - "sts:AssumeRole"
+              - "sts:TagSession"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"
+  EfsCsiPodIdentityAssociation:
+    Type: AWS::EKS::PodIdentityAssociation
+    Properties:
+      ClusterName: !Sub "${ClusterName}"
+      Namespace: kube-system
+      RoleArn: !Ref EfsCsiPodRole
+      ServiceAccount: efs-csi-controller-sa
+
   KarpenterControllerPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:

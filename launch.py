@@ -101,6 +101,8 @@ def create_pod(key: str, script: Path, args, pass_through_args: list[str]) -> cl
         "memory": f"{args.memory_gb}Gi",
     }
     limits = {}
+    volumes = {}
+    volume_mounts = {}
 
     if args.accelerator and args.accelerator_count > 0:
         node_selector["april.dev/accelerator"] = args.accelerator
@@ -108,6 +110,17 @@ def create_pod(key: str, script: Path, args, pass_through_args: list[str]) -> cl
 
     if token := get_wandb_token():
         env["WANDB_API_KEY"] = token
+
+    for mount in args.mount:
+        for arg in mount.split(","):
+            id = f"mount-{len(volumes)}"
+            (key, value) = arg.split("=")
+            if key == "pvc":
+                volumes[id] = value
+            elif key == "target":
+                volume_mounts[id] = value
+            else:
+                raise Exception(f"Unknown mount key {key} with value {value}")
 
     return v1.create_namespaced_pod(namespace="default", body=client.V1Pod(
         metadata=client.V1ObjectMeta(
@@ -129,7 +142,17 @@ def create_pod(key: str, script: Path, args, pass_through_args: list[str]) -> cl
                         limits=limits,
                         requests=requests,
                     ),
+                    volume_mounts=[
+                        client.V1VolumeMount(name=k, mount_path=v) for k, v in volume_mounts.items()
+                    ],
                 ),
+            ],
+            volumes=[
+                client.V1Volume(
+                    name=k,
+                    persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                        claim_name=v),
+                ) for k, v in volumes.items()
             ],
         ),
     ))
@@ -147,6 +170,7 @@ def main(unparsed_args):
     parser.add_argument("--glob", default=DEFAULT_GLOB)
     parser.add_argument("--image", default=DEFAULT_IMAGE)
     parser.add_argument("--memory_gb", type=float, default=DEFAULT_MEMORY_GB)
+    parser.add_argument("--mount", action="append")
     args, unknown_args = parser.parse_known_args(unparsed_args[1:])
 
     if args.accelerator_count > 0 and not args.accelerator:
