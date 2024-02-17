@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Resources used by https://github.com/aws/karpenter
+Description: Resources used by pray
 Parameters:
   ClusterName:
     Type: String
@@ -10,65 +10,77 @@ Parameters:
   LatestEksId:
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
     Default: !Sub "/aws/service/eks/optimized-ami/${ClusterVersion}/amazon-linux-2/recommended/image_id"
+
 Resources:
-  VPC:
+  Vpc:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: 10.4.0.0/16
+  VpcIpv6:
+    Type: AWS::EC2::VPCCidrBlock
+    Properties:
+      AmazonProvidedIpv6CidrBlock: true
+      VpcId: !Ref Vpc
   SubnetPublicA:
     Type: AWS::EC2::Subnet
     Properties:
+      AssignIpv6AddressOnCreation: true
       AvailabilityZone: !Sub "{AWS::Region}a"
-      CidrBlock: 10.4.16.0/20
       MapPublicIpOnLaunch: true
+      CidrBlock: !Select [ 0, !Cidr [ !GetAtt Vpc.CidrBlock, 16, 12 ] ]
+      Ipv6CidrBlock: !Select [ 0, !Cidr [ !Select [ 0, !GetAtt Vpc.Ipv6CidrBlocks], 16, 64 ] ]
+      VpcId: !Ref Vpc
       Tags:
         - Key: Name
           Value: public-a
-      VpcId: !Ref VPC
   SubnetPrivateA:
     Type: AWS::EC2::Subnet
     Properties:
       AvailabilityZone: !Sub "{AWS::Region}a"
-      CidrBlock: 10.4.16.0/20
+      CidrBlock: !Select [ 1, !Cidr [ !GetAtt Vpc.CidrBlock, 16, 12 ] ]
+      Ipv6CidrBlock: !Select [ 1, !Cidr [ !Select [ 0, !GetAtt Vpc.Ipv6CidrBlocks], 16, 64 ] ]
+      VpcId: !Ref Vpc
       Tags:
         - Key: Name
           Value: private-a
         - Key: karpenter.sh/discovery
           Value: cluster-us-west-2
-      VpcId: !Ref VPC
   SubnetPrivateB:
     Type: AWS::EC2::Subnet
     Properties:
       AvailabilityZone: !Sub "{AWS::Region}b"
-      CidrBlock: 10.4.32.0/20
+      CidrBlock: !Select [ 2, !Cidr [ !GetAtt Vpc.CidrBlock, 16, 12 ] ]
+      Ipv6CidrBlock: !Select [ 2, !Cidr [ !Select [ 0, !GetAtt Vpc.Ipv6CidrBlocks], 16, 64 ] ]
+      VpcId: !Ref Vpc
       Tags:
         - Key: Name
           Value: private-b
         - Key: karpenter.sh/discovery
           Value: cluster-us-west-2
-      VpcId: !Ref VPC
   SubnetPrivateC:
     Type: AWS::EC2::Subnet
     Properties:
       AvailabilityZone: !Sub "{AWS::Region}c"
-      CidrBlock: 10.4.48.0/20
+      CidrBlock: !Select [ 3, !Cidr [ !GetAtt Vpc.CidrBlock, 16, 12 ] ]
+      Ipv6CidrBlock: !Select [ 3, !Cidr [ !Select [ 0, !GetAtt Vpc.Ipv6CidrBlocks], 16, 64 ] ]
+      VpcId: !Ref Vpc
       Tags:
         - Key: Name
           Value: private-c
         - Key: karpenter.sh/discovery
           Value: cluster-us-west-2
-      VpcId: !Ref VPC
   SubnetPrivateD:
     Type: AWS::EC2::Subnet
     Properties:
       AvailabilityZone: !Sub "{AWS::Region}d"
-      CidrBlock: 10.4.64.0/20
+      CidrBlock: !Select [ 4, !Cidr [ !GetAtt Vpc.CidrBlock, 16, 12 ] ]
+      Ipv6CidrBlock: !Select [ 4, !Cidr [ !Select [ 0, !GetAtt Vpc.Ipv6CidrBlocks], 16, 64 ] ]
+      VpcId: !Ref Vpc
       Tags:
         - Key: Name
           Value: private-d
         - Key: karpenter.sh/discovery
           Value: cluster-us-west-2
-      VpcId: !Ref VPC
   InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
@@ -81,7 +93,7 @@ Resources:
       Tags:
         - Key: Name
           Value: public
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
   SubnetPublicARouteTable:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -92,6 +104,12 @@ Resources:
      Properties:
         RouteTableId: !Ref RouteTablePublic
         DestinationCidrBlock: '0.0.0.0/0'
+        GatewayId: !Ref GatewayId
+  RouteInternetGatewayIpv6:
+     Type: AWS::EC2::Route
+     Properties:
+        RouteTableId: !Ref RouteTablePublic
+        DestinationIpv6CidrBlock: '::/0'
         GatewayId: !Ref GatewayId
   NatGateway:
     Type: AWS::EC2::NatGateway
@@ -107,7 +125,7 @@ Resources:
       Tags:
         - Key: Name
           Value: private
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
   SubnetPrivateARouteTable:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -134,13 +152,19 @@ Resources:
         RouteTableId: !Ref RouteTablePrivate
         DestinationCidrBlock: '0.0.0.0/0'
         NatGatewayId: !Ref NatGateway
+  RouteNatGatewayIpv6:
+     Type: AWS::EC2::Route
+     Properties:
+        RouteTableId: !Ref RouteTablePrivate
+        DestinationIpv6CidrBlock: '::/0'
+        NatGatewayId: !Ref NatGateway
 
   SecurityGroupInternetAccess:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupName: internet-access
       GroupDescription: Allow machines to access the internet
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       SecurityGroupEgress:
         - IpProtocol: -1
           FromPort: -1
@@ -158,7 +182,7 @@ Resources:
     Properties:
       GroupName: local-access
       GroupDescription: Allow local machines to talk to each other
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       Tags:
         - Key: karpenter.sh/discovery
         - Value: !Sub "${ClusterName}"
@@ -195,7 +219,7 @@ Resources:
     Properties:
       GroupName: allow-ssh-from-anywhere
       GroupDescription: Allow machines to receive SSH traffic
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       SecurityGroupEgress:
         - IpProtocol: tcp
           FromPort: 22
@@ -211,7 +235,7 @@ Resources:
     Properties:
       GroupName: !Sub "eks-control-plane-${ClusterName}"
       GroupDescription: Allow the control plane to talk to itself
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
   SecurityGroupEksControlPlaneIngress:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
@@ -230,7 +254,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Allow nodes to access the control plane
-      VpcId: !Ref VPC
+      VpcId: !Ref Vpc
       SecurityGroupEgress:
         - IpProtocol: -1
           FromPort: -1
