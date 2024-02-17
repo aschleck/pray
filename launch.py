@@ -90,7 +90,7 @@ def upload_archive(root: Path, globs: list[str], bazel_remote: URL) -> str:
     return key
 
 
-def create_pod(key: str, script: Path, args, pass_through_args: list[str]) -> client.V1Pod:
+def create_pod(archive_id: str, script: Path, args, pass_through_args: list[str]) -> client.V1Pod:
     user = getpass.getuser()
     v1 = client.CoreV1Api()
 
@@ -112,8 +112,8 @@ def create_pod(key: str, script: Path, args, pass_through_args: list[str]) -> cl
         env["WANDB_API_KEY"] = token
 
     for mount in args.mount:
+        id = f"mount-{len(volumes)}"
         for arg in mount.split(","):
-            id = f"mount-{len(volumes)}"
             (key, value) = arg.split("=")
             if key == "pvc":
                 volumes[id] = value
@@ -134,7 +134,7 @@ def create_pod(key: str, script: Path, args, pass_through_args: list[str]) -> cl
             restart_policy="Never",
             containers=[
                 client.V1Container(
-                    args=[key, str(script)] + pass_through_args,
+                    args=[archive_id, str(script)] + pass_through_args,
                     image=args.image,
                     name="runner",
                     env=[client.V1EnvVar(name=k, value=v) for k, v in env.items()],
@@ -170,7 +170,7 @@ def main(unparsed_args):
     parser.add_argument("--glob", default=DEFAULT_GLOB)
     parser.add_argument("--image", default=DEFAULT_IMAGE)
     parser.add_argument("--memory_gb", type=float, default=DEFAULT_MEMORY_GB)
-    parser.add_argument("--mount", action="append")
+    parser.add_argument("--mount", action="append", default=[])
     args, unknown_args = parser.parse_known_args(unparsed_args[1:])
 
     if args.accelerator_count > 0 and not args.accelerator:
@@ -178,7 +178,7 @@ def main(unparsed_args):
     elif args.accelerator_count == 0 and args.accelerator:
         args.accelerator_count = 1
 
-    root = find_root(Path(os.getcwd()), args.repository_root)
+    root = find_root(Path.cwd(), args.repository_root)
     config.load_kube_config()
     
     if address := os.environ.get("REMOTE_CACHE_ADDRESS"):
@@ -188,10 +188,10 @@ def main(unparsed_args):
     # TODO(april): note that if bazel-remote is replicated than there's no reason to expect that the
     # runner will pick the correct one to fetch this file. The obvious thing to do is pass the IP
     # and port but then we need to check in the launcher that we're not being scroogled.
-    key = upload_archive(root, args.glob.split(os.pathsep), bazel_remote)
+    archive_id = upload_archive(root, args.glob.split(os.pathsep), bazel_remote)
 
-    script = (root.Path.cwd() / args.script).relative_to(root)
-    pod = create_pod(key, script, args, unknown_args)
+    script = (Path.cwd() / args.script).relative_to(root)
+    pod = create_pod(archive_id, script, args, unknown_args)
     print(f"Created {pod.metadata.name}")
 
 
